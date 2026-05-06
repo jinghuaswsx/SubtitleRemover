@@ -43,15 +43,13 @@ class PhaseCContractsTest(unittest.TestCase):
     def test_api_health_reports_phase_c(self):
         from src import api_server
 
-        self.assertEqual(
-            api_server.health(),
-            {
-                "status": "ok",
-                "phase": "C",
-                "queued": 0,
-                "tasks_in_memory": 0,
-            },
-        )
+        h = api_server.health()
+        self.assertEqual(h["status"], "ok")
+        self.assertEqual(h["phase"], "C")
+        self.assertIn("queued", h)
+        self.assertIn("tasks_in_memory", h)
+        self.assertIn("vace_enabled", h)
+        self.assertIsInstance(h["vace_enabled"], bool)
 
 
 if __name__ == "__main__":

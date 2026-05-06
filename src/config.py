@@ -32,6 +32,22 @@ SERVICE_PORT = int(os.getenv("SR_PORT", "8082"))
 UPLOAD_DIR = os.getenv("SR_UPLOAD_DIR", os.path.join(os.path.dirname(__file__), "..", "uploads"))
 OUTPUT_DIR = os.getenv("SR_OUTPUT_DIR", os.path.join(os.path.dirname(__file__), "..", "output"))
 
+# VACE — see docs/vace_integration_plan.md
+def _envflag(name: str, default: str) -> bool:
+    return os.getenv(name, default).strip().lower() in ("1", "true", "yes", "on")
+
+VACE_ENABLED = _envflag("SR_VACE_ENABLED", "0")
+VACE_DRY_RUN = _envflag("SR_VACE_DRY_RUN", "1")
+VACE_PROFILE = os.getenv("SR_VACE_PROFILE", "rtx4070tis_balanced")
+VACE_GPU_FRACTION = float(os.getenv("SR_VACE_GPU_FRACTION", "0.9"))
+VACE_MODEL_DIR = os.getenv(
+    "SR_VACE_MODEL_DIR",
+    os.path.join(os.path.dirname(__file__), "..", "models", "vace"),
+)
+VACE_GPU_LOCK_ENABLED = _envflag("SR_GPU_LOCK_ENABLED", "0")
+VACE_GPU_LOCK_FILE = os.getenv("SR_GPU_LOCK_FILE", "/tmp/gpu.lock")
+
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(MODEL_DIR, exist_ok=True)
+os.makedirs(VACE_MODEL_DIR, exist_ok=True)

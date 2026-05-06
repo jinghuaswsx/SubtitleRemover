@@ -123,15 +123,17 @@ env 开关 `SR_GPU_LOCK_ENABLED`（默认 `True`，阶段 2 启用时）。设�
 
 **commit 1**：本文档 + `docs/api.md` 增 VACE 章节 + `README.md` 端点表更新。**零代码改动**。
 
-**commit 2**：
+**commit 2**（已实现，待部署）：
 - 新建 `src/vace/{__init__,config,runner}.py`
 - 改 `src/config.py`：增 VACE env 配置
 - 改 `src/api_server.py`：`Task.kind` + 新路由 + worker dispatch + `/info`/`/health` 增字段
 - 新建 `tests/test_vace_profile.py`、`tests/test_vace_route_dry_run.py`
 - 默认 `SR_VACE_ENABLED=False`，`SR_VACE_DRY_RUN=True`
 - **生产 :84 行为零变化**（路由返回 503，`/remove-subtitle` 完全不变）
+- 测试基线：`pytest`/`unittest discover` ≥ 17 passed（3 既有 + 5 profile + 9 route dry-run）
 
-阶段 1 完成后：合并到 master、push、生产 git pull、import dry-run、`systemctl restart`、`/health` 与 `/info` 验证。
+阶段 1 部署：合并到 master、push、生产 `cd /home/cjh/code/SubtitleRemover && git pull`、
+import dry-run、`systemctl restart`、`/health` 与 `/info` 验证。
 
 ### 7.2 阶段 2 — 真跑接入（commit 3）
 

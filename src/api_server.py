@@ -28,6 +28,8 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from . import config
 from .pipeline import process_video
+from .vace.config import PROFILES as _VACE_PROFILES
+from .vace.runner import process_vace
 
 logging.basicConfig(
     level=logging.INFO,
@@ -61,11 +63,21 @@ class Task:
     task_id: str
     input_path: str
     output_path: str
-    roi_spec: Optional[str]
+    roi_spec: Optional[str] = None
+    kind: str = "subtitle"  # "subtitle" | "vace"
+    # subtitle pipeline fields
     detection: str = "auto"
     ocr_engine: str = "easyocr"
     inpaint: str = "opencv"
     vsr: str = "off"
+    # vace pipeline fields
+    prompt: Optional[str] = None
+    negative_prompt: str = ""
+    mask_mode: str = "none"
+    mask_path: Optional[str] = None
+    profile: str = "rtx4070tis_balanced"
+    seed: int = -1
+    # task lifecycle
     state: str = "queued"  # queued / running / done / failed
     progress: float = 0.0
     error: Optional[str] = None
@@ -84,20 +96,24 @@ def _worker() -> None:
         if task is None:
             continue
         task.state = "running"
-        logger.info("task %s started (input=%s)", task_id, task.input_path)
+        logger.info("task %s started (kind=%s, input=%s)",
+                    task_id, task.kind, task.input_path)
         try:
             def cb(p: float) -> None:
                 task.progress = p
-            process_video(
-                task.input_path,
-                task.output_path,
-                detection=task.detection,
-                ocr_engine=task.ocr_engine,
-                roi_spec=task.roi_spec,
-                inpaint=task.inpaint,
-                vsr=task.vsr,
-                progress_cb=cb,
-            )
+            if task.kind == "vace":
+                process_vace(task, progress_cb=cb)
+            else:
+                process_video(
+                    task.input_path,
+                    task.output_path,
+                    detection=task.detection,
+                    ocr_engine=task.ocr_engine,
+                    roi_spec=task.roi_spec,
+                    inpaint=task.inpaint,
+                    vsr=task.vsr,
+                    progress_cb=cb,
+                )
             task.state = "done"
             task.progress = 1.0
             logger.info("task %s done", task_id)
@@ -122,6 +138,7 @@ def health() -> dict:
         "phase": "C",
         "queued": QUEUE.qsize(),
         "tasks_in_memory": len(TASKS),
+        "vace_enabled": bool(config.VACE_ENABLED),
     }
 
 
@@ -130,6 +147,8 @@ _ALLOWED_OCR = {"easyocr", "paddle"}
 _ALLOWED_INPAINT = {"opencv", "lama"}
 _ALLOWED_VSR = {"off", "none", "real-esrgan", "realesrgan",
                 "basicvsr++", "basicvsrpp", "basicvsr"}
+_ALLOWED_MASK_MODE = {"none", "roi", "mask_file"}
+_ALLOWED_VACE_PROFILE = set(_VACE_PROFILES.keys())
 
 
 @app.get("/info")
@@ -140,6 +159,8 @@ def info() -> dict:
         "ocr_engine": sorted(_ALLOWED_OCR),
         "inpaint": sorted(_ALLOWED_INPAINT),
         "vsr": sorted(_ALLOWED_VSR),
+        "vace_profile": sorted(_ALLOWED_VACE_PROFILE),
+        "vace_enabled": bool(config.VACE_ENABLED),
         "max_resolution": [config.MAX_WIDTH, config.MAX_HEIGHT],
         "max_duration_min": config.MAX_DURATION_MIN,
         "supported_inputs": config.SUPPORTED_INPUTS,
@@ -190,6 +211,71 @@ async def remove_subtitle(
     QUEUE.put(task_id)
     logger.info("task %s queued (file=%s, detection=%s/%s, inpaint=%s, vsr=%s, roi=%s)",
                 task_id, file.filename, detection, ocr_engine, inpaint, vsr, roi)
+    return JSONResponse({"task_id": task_id, "state": "queued"})
+
+
+@app.post("/vace-edit")
+async def vace_edit(
+    file: UploadFile = File(...),
+    prompt: str = Form(...),
+    negative_prompt: str = Form(default=""),
+    mask_mode: str = Form(default="none"),
+    roi: Optional[str] = Form(default=None),
+    mask_file: Optional[UploadFile] = File(default=None),
+    profile: str = Form(default="rtx4070tis_balanced"),
+    seed: int = Form(default=-1),
+) -> JSONResponse:
+    if not config.VACE_ENABLED:
+        raise HTTPException(503, "VACE disabled (set SR_VACE_ENABLED=1)")
+    if not prompt or not prompt.strip():
+        raise HTTPException(422, "prompt is required and must be non-empty")
+    if mask_mode not in _ALLOWED_MASK_MODE:
+        raise HTTPException(400, f"mask_mode must be one of {sorted(_ALLOWED_MASK_MODE)}")
+    if profile not in _ALLOWED_VACE_PROFILE:
+        raise HTTPException(400, f"profile must be one of {sorted(_ALLOWED_VACE_PROFILE)}")
+    if mask_mode == "roi" and not roi:
+        raise HTTPException(422, "roi is required when mask_mode=roi")
+    if mask_mode == "mask_file" and mask_file is None:
+        raise HTTPException(422, "mask_file is required when mask_mode=mask_file")
+
+    ext = os.path.splitext(file.filename or "")[1].lower().lstrip(".")
+    if ext not in {fmt.lower() for fmt in config.SUPPORTED_INPUTS}:
+        raise HTTPException(415, f"unsupported format: .{ext}")
+
+    task_id = uuid.uuid4().hex
+    input_path = os.path.join(config.UPLOAD_DIR, f"{task_id}.{ext}")
+    output_path = os.path.join(config.OUTPUT_DIR, f"{task_id}.mp4")
+    mask_path: Optional[str] = None
+
+    with open(input_path, "wb") as f:
+        while chunk := await file.read(1024 * 1024):
+            f.write(chunk)
+
+    if mask_mode == "mask_file" and mask_file is not None:
+        mask_ext = (os.path.splitext(mask_file.filename or "")[1].lower().lstrip(".")
+                    or "mp4")
+        mask_path = os.path.join(config.UPLOAD_DIR, f"{task_id}.mask.{mask_ext}")
+        with open(mask_path, "wb") as f:
+            while chunk := await mask_file.read(1024 * 1024):
+                f.write(chunk)
+
+    task = Task(
+        task_id=task_id,
+        kind="vace",
+        input_path=input_path,
+        output_path=output_path,
+        roi_spec=roi if mask_mode == "roi" else None,
+        prompt=prompt,
+        negative_prompt=negative_prompt,
+        mask_mode=mask_mode,
+        mask_path=mask_path,
+        profile=profile,
+        seed=seed,
+    )
+    TASKS[task_id] = task
+    QUEUE.put(task_id)
+    logger.info("vace task %s queued (file=%s, profile=%s, mask_mode=%s, prompt=%r)",
+                task_id, file.filename, profile, mask_mode, prompt[:80])
     return JSONResponse({"task_id": task_id, "state": "queued"})
 
 
