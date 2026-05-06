@@ -28,6 +28,8 @@ GPU 加速视频去字幕工具。集成 VSR（Video Super Resolution）模块�
   → 逐帧去字幕
       ├── OpenCV inpainting（快速）
       └── LaMa / MAT（高质量）
+  → 可选 VACE 生成式去字幕（实验，短片段）
+      └── 外部 VACE worker：视频 + mask + prompt
   → VSR 画质增强（恢复 inpainted 区域细节）
       ├── BasicVSR++ / Real-BasicVSR
       └── Real-ESRGAN（可选增强）
@@ -46,7 +48,8 @@ SubtitleRemover/
 │   ├── inpainting/       # 字幕去除
 │   │   ├── __init__.py
 │   │   ├── opencv_inpaint.py    # OpenCV 快速去除
-│   │   └── deep_inpaint.py      # 深度学习去字幕
+│   │   ├── deep_inpaint.py      # 深度学习去字幕
+│   │   └── vace_adapter.py      # VACE 外部 worker 适配
 │   ├── vsr/              # 视频超分辨率（核心模块）
 │   │   ├── __init__.py
 │   │   ├── basicvsr.py          # BasicVSR++ 集成
@@ -106,6 +109,30 @@ frames = vsr.enhance(input_frames)
 注意：公开 mmediting BasicVSR++ checkpoint 与 basicsr SPyNet 通道宽度不兼容。
 生产请求推荐使用 `vsr=real-esrgan`；只有提供 basicsr-native checkpoint 时再启用
 `vsr=basicvsr++`。
+
+## VACE 实验模式
+
+`inpaint=vace-1.3b` 会复用现有 OCR/ROI 字幕区域检测，生成 VACE 需要的
+mask 视频，然后调用外部 VACE 命令行输出短片段结果。这个模式不把 VACE
+依赖安装进当前服务环境，推荐单独准备 Python 3.10 + VACE checkout +
+Wan2.1-VACE-1.3B 模型目录。
+
+首版限制：
+- 默认只处理 6 秒以内短片段（`SR_VACE_MAX_DURATION_SEC`）。
+- 只支持 `vsr=off`，避免 VACE 输出后再进入当前逐帧 VSR 分支。
+- 未配置外部 VACE 时会返回清晰错误，不会自动下载模型或修改环境。
+
+关键环境变量：
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `SR_VACE_PYTHON` | `python` | VACE 独立环境中的 Python |
+| `SR_VACE_SCRIPT` | 空 | `vace_wan_inference.py` 路径 |
+| `SR_VACE_CKPT_DIR` | 空 | `Wan2.1-VACE-1.3B` 模型目录 |
+| `SR_VACE_SIZE` | `480p` | 1.3B 推荐尺寸 |
+| `SR_VACE_FRAME_NUM` | `81` | VACE 帧数，需符合 4n+1 |
+| `SR_VACE_OFFLOAD_MODEL` | `true` | 降低显存占用 |
+| `SR_VACE_T5_CPU` | `true` | 将 T5 放到 CPU |
 
 ## API 端点
 
