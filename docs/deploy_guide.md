@@ -52,6 +52,7 @@ curl http://localhost/health
 仓库: https://github.com/jinghuaswsx/SubtitleRemover
 端口: 8082 (规划)
 模块: VSR (BasicVSR++)
+支持分辨率: 1080p (全帧) / 2K (Tile分块)
 ```
 
 #### 待开发模块
@@ -83,9 +84,9 @@ cd SubtitleRemover
 
 | 服务 | 显存配额 | 实际占用 |
 |------|:-------:|:--------:|
-| AudioSeparator | 50% (8GB) | ~4-5GB |
-| SubtitleRemover | 40% (6.4GB) | ~6GB (含 VSR) |
-| 余量 | 10% | ~2GB 缓冲 |
+| AudioSeparator | 40% (6.4GB) | ~4GB (单路 vocal_balanced) |
+| SubtitleRemover | 40% (6.4GB) | ~5-6GB (2K + VSR) |
+| 余量 | 20% | ~3-4GB 缓冲 |
 
 ### AudioSeparator systemd 单元
 
