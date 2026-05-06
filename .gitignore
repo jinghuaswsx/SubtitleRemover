@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+venv/
+.env
+models/*.pth
+models/*.pth.*
+uploads/
+output/
+logs/
+*.mp4
+*.zip
