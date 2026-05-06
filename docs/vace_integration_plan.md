@@ -158,17 +158,28 @@ env 开关 `SR_GPU_LOCK_ENABLED`（默认 `True`，阶段 2 启用时）。设�
 阶段 1 部署：合并到 master、push、生产 `cd /home/cjh/code/SubtitleRemover && git pull`、
 import dry-run、`systemctl restart`、`/health` 与 `/info` 验证。
 
-### 7.2 阶段 2 — 真跑接入（commit 3）
+### 7.2 阶段 2 — 真跑接入（commit 3，已实现）
 
-- 新建 `src/gpu_lock/{__init__,file_lock}.py`（fcntl 实现）
-- `src/vace/runner.py` 实现真实 wan2.1 调用 + chunk 分段
-- 新建 `models/download_vace.py`（拉取 1.3B 权重到 `SR_VACE_MODEL_DIR`）
-- 改 `requirements.txt` 加 wan2.1 等依赖
-- 改 `deploy.md` 增 VACE 启用步骤
-- 更新本文档 §9 验收标准实测数据
+代码层面：
+- 新建 `src/gpu_lock/{__init__,file_lock}.py`（Linux `fcntl.flock` 实现）
+- `src/vace/runner.py` 实现 `_run_real()`，**不在 SR venv 装 wan2.1**——通过
+  `subprocess` 调用外部 VACE checkout（与 Y 路径 `src/inpainting/vace_adapter.py`
+  共用同一桥），env: `SR_VACE_PYTHON` / `SR_VACE_SCRIPT` / `SR_VACE_CKPT_DIR`
+- profile 的 `model_name` / `size` / `frame_num` / `sample_steps` / `offload_model`
+  / `t5_cpu` 全部传给外部 VACE 命令行
+- mask 处理：`mask_mode=roi` 复用 `vace_adapter._write_mask_video`；
+  `mask_mode=mask_file` 直传上传文件；`mask_mode=none` 在 real 模式拒绝
+- `SR_GPU_LOCK_ENABLED=1` 时，`subprocess.run` 包在 `cross_process_gpu_lock`
+  里，避免与 audio :83 服务同时占用 GPU
+- 测试：3 GPU lock + 3 runner real（mock subprocess）
 
-部署：在生产 venv 装依赖（pip）、拉权重、`systemctl edit subtitle-remover` 加
-`SR_VACE_ENABLED=1`、`SR_VACE_DRY_RUN=0`、`SR_GPU_LOCK_ENABLED=1`，重启验证。
+**未做**（保持 minimal）：
+- 不在本仓库 `requirements.txt` 加 wan2.1（外部 venv 管理）
+- 不写权重下载脚本（外部 VACE checkout 自管模型）
+- 不接入 Y 路径的 GPU lock（不在 X scope；如果 audio + Y 共卡也撞车，
+  由 Y 路径维护方在 `vace_adapter.VaceSubtitleRemover.remove` 加同名锁）
+
+阶段 2 部署步骤详见 `deploy.md` 的 "VACE 阶段 2 启用" 一节。
 
 ## 8. 测试矩阵
 

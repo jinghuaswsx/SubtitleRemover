@@ -112,9 +112,99 @@ LocalServer 上 AudioSeparator 也已上线：
 
 两个服务都使用 `<1024` 端口，systemd unit 保留 `CAP_NET_BIND_SERVICE`。
 
+## VACE 阶段 2 启用
+
+阶段 1 部署完成（`/health` 含 `vace_enabled: false`、`/info` 含
+`vace_profile`、`/vace-edit` 默认返回 503）后，按以下步骤启用真实 VACE 推理。
+**SR venv 不装 wan2.1**——VACE 跑在独立 venv 里，SR 服务通过 subprocess 调用。
+
+### 1. 准备外部 VACE 环境
+
+```bash
+# 独立 Python 3.10 venv（VACE 上游对 3.12 支持不稳定）
+sudo mkdir -p /opt/vace
+sudo chown cjh:cjh /opt/vace
+python3.10 -m venv /opt/vace/venv
+source /opt/vace/venv/bin/activate
+
+# clone Wan2.1 + VACE 推理脚本（具体仓库以官方为准）
+git clone https://github.com/Wan-Video/Wan2.1.git /opt/vace/Wan2.1
+pip install -r /opt/vace/Wan2.1/requirements.txt
+
+# 拉模型权重到 ckpt 目录（约 10 GB）
+mkdir -p /data/models/Wan2.1-VACE-1.3B
+huggingface-cli download Wan-AI/Wan2.1-VACE-1.3B \
+  --local-dir /data/models/Wan2.1-VACE-1.3B
+```
+
+### 2. 编辑 systemd 单元
+
+`sudo systemctl edit subtitle-remover` 加入：
+
+```ini
+[Service]
+Environment=SR_VACE_ENABLED=1
+Environment=SR_VACE_DRY_RUN=0
+Environment=SR_VACE_PYTHON=/opt/vace/venv/bin/python
+Environment=SR_VACE_SCRIPT=/opt/vace/Wan2.1/vace/vace_wan_inference.py
+Environment=SR_VACE_CKPT_DIR=/data/models/Wan2.1-VACE-1.3B
+Environment=SR_VACE_PROFILE=rtx4070tis_balanced
+Environment=SR_VACE_TIMEOUT_SEC=3600
+Environment=SR_GPU_LOCK_ENABLED=1
+Environment=SR_GPU_LOCK_FILE=/tmp/gpu.lock
+```
+
+### 3. 重启验证
+
+```bash
+sudo systemctl daemon-reload
+
+# import dry-run 必须在 restart 之前
+sudo -u cjh /home/cjh/code/SubtitleRemover/venv/bin/python \
+  -c "from src import api_server; print('import ok')"
+
+sudo systemctl restart subtitle-remover
+
+curl http://127.0.0.1:84/health   # 期望 vace_enabled: true
+curl http://127.0.0.1:84/info | jq '.vace_enabled, .vace_profile'
+```
+
+### 4. 端到端验证（短片段）
+
+准备一个 5s / 1080p 测试视频 `sample.mp4`：
+
+```bash
+HOST=http://127.0.0.1:84
+TASK=$(curl -s -F "file=@sample.mp4" \
+  -F "prompt=remove logo at top-left corner" \
+  -F "mask_mode=roi" -F "roi=0,0,200,200" \
+  -F "profile=rtx4070tis_balanced" \
+  $HOST/vace-edit | jq -r .task_id)
+echo task=$TASK
+
+while :; do
+  S=$(curl -s $HOST/status/$TASK)
+  echo "$S" | jq -c '{state, progress, error}'
+  STATE=$(echo "$S" | jq -r .state)
+  [[ "$STATE" == done || "$STATE" == failed ]] && break
+  sleep 5
+done
+
+[[ "$STATE" == "done" ]] && curl -s -o vace_out.mp4 $HOST/download/$TASK
+```
+
+### 5. 与 AudioSeparator 共卡的协调
+
+两服务都打开 `SR_GPU_LOCK_ENABLED=1` + 同一 `SR_GPU_LOCK_FILE` 后，VACE 推理段
+与 audio 推理段会自动串行。三服务并发显存峰值 ≤ 15.5 GB（4070 Ti Super 16 GB）。
+
+如果 AudioSeparator 端尚未集成 GPU lock，手动协调：跑 VACE 时先暂停 audio
+请求，或在 nginx/Caddy 层拒绝 audio 请求直到 VACE 任务完成。
+
 ## 相关文档
 
 - [README.md](README.md) — 项目概览
 - [localserver.md](localserver.md) — LocalServer 实际部署信息
 - [docs/deploy_guide.md](docs/deploy_guide.md) — 4070 Ti Super 双服务部署指南
 - [docs/handoff-2026-05-06-server-state.md](docs/handoff-2026-05-06-server-state.md) — 服务器状态交接
+- [docs/vace_integration_plan.md](docs/vace_integration_plan.md) — VACE 接入实施规范
