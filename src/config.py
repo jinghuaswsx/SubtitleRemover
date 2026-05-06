@@ -6,9 +6,12 @@ import os
 DEVICE = os.getenv("SR_DEVICE", "cuda")
 GPU_MEMORY_FRACTION = float(os.getenv("SR_GPU_FRACTION", "0.4"))  # leave room for audio separator
 
-# Video
-MAX_RESOLUTION = int(os.getenv("SR_MAX_RESOLUTION", "1920"))  # max width
-BATCH_SIZE = int(os.getenv("SR_BATCH_SIZE", "4"))
+# Video — support 1080p and 2K
+MAX_WIDTH = int(os.getenv("SR_MAX_WIDTH", "2560"))      # max input width (1080p=1920, 2K=2560)
+MAX_HEIGHT = int(os.getenv("SR_MAX_HEIGHT", "1440"))     # max input height
+MAX_DURATION_MIN = int(os.getenv("SR_MAX_DURATION", "60"))  # max video duration in minutes
+SUPPORTED_INPUTS = os.getenv("SR_INPUT_FORMATS", "mp4,mkv,avi,mov,webm").split(",")
+BATCH_SIZE = int(os.getenv("SR_BATCH_SIZE", "4"))        # VSR batch size (reduce for 2K)
 
 # Detection
 DETECTION_MODE = os.getenv("SR_DETECTION_MODE", "auto")  # auto / roi / ocr
@@ -19,7 +22,9 @@ INPAINT_METHOD = os.getenv("SR_INPAINT_METHOD", "opencv")  # opencv / lama
 
 # VSR
 VSR_MODEL = os.getenv("SR_VSR_MODEL", "basicvsr++")
-VSR_UPSCALE_FACTOR = int(os.getenv("SR_VSR_UPSCALE", "2"))
+VSR_UPSCALE_FACTOR = int(os.getenv("SR_VSR_UPSCALE", "2"))  # upscale inpainted region only
+VSR_TILE_SIZE = int(os.getenv("SR_VSR_TILE_SIZE", "0"))    # tile processing for 2K (0=disabled)
+VSR_TILE_PAD = int(os.getenv("SR_VSR_TILE_PAD", "10"))
 MODEL_DIR = os.getenv("SR_MODEL_DIR", os.path.join(os.path.dirname(__file__), "..", "models"))
 
 # API
