@@ -31,6 +31,29 @@ VSR 严格串行）。
 | `appcore/vace_subtitle/config.py` | 在 PROFILES 增加 3 档 | 本仓库新建 `src/vace/config.py`，**只放 4070 Ti Super 三档**，不复制 `rtx3060_*` | 本仓库不部署 3060；保持精简 |
 | `tools/audio_separator/api_server.py` 改 env | 是（fraction 0.5→env） | **不动** | 不在本仓库范围；audio :83 由独立仓库管 |
 
+### 2.1 与本仓库 Y 路径共存
+
+主分支已合入并行实现 [src/inpainting/vace_adapter.py](../src/inpainting/vace_adapter.py)
+（commit `9625ce0`），把 VACE 作为 `/remove-subtitle?inpaint=vace-1.3b` 的
+**inpaint 后端**（subprocess 调外部 VACE checkout，env: `SR_VACE_SCRIPT` /
+`SR_VACE_CKPT_DIR` 等）。本规范定义的 X 路径（独立路由 `/vace-edit`）与之**并存**：
+
+| 维度 | Y 路径（`inpaint=vace-1.3b`） | X 路径（`/vace-edit`） |
+|---|---|---|
+| 调用入口 | 既有 `/remove-subtitle` 路由 | 新增 `/vace-edit` 路由 |
+| 触发方式 | 表单字段 `inpaint=vace-1.3b` | 整路由专属 |
+| 用途定位 | "用 VACE 去字幕"（mask 由 OCR/ROI 自动产出） | "用 VACE 视频编辑"（用户提供 prompt + 可选 mask）|
+| Prompt | 来自 env `SR_VACE_PROMPT` 默认值 | 路由必填 `prompt` |
+| Mask | OCR / ROI 自动 mask 视频 | `mask_mode=none/roi/mask_file` |
+| 时长上限 | 默认 6s（POC 限制） | 由 profile 的 `chunk_seconds × N` 决定 |
+| Profile 选择 | 不可选（用 `SR_VACE_*` 静态参数） | 路由参数 `profile` 三档可选 |
+| 阶段 2 后端 | 已用 subprocess 桥（env `SR_VACE_SCRIPT`） | **复用**同一 subprocess 桥（见 §7.2） |
+
+阶段 2 实现 X 路径真跑时，`src/vace/runner.py:_run_real()` 直接复用
+`src/inpainting/vace_adapter.VaceConfig.build_command()` 思路（或直接调用一个
+共享 `_invoke_vace()` 函数），保持单一外部依赖配置 `SR_VACE_SCRIPT` /
+`SR_VACE_CKPT_DIR`，避免重复在 SR venv 装 wan2.1。
+
 ## 3. 路由设计：`POST /vace-edit`
 
 ### 3.1 表单字段
