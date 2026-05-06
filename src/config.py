@@ -20,6 +20,24 @@ SUBTITLE_ROI = os.getenv("SR_SUBTITLE_ROI", "bottom_20%")  # default: bottom 20%
 # Inpainting
 INPAINT_METHOD = os.getenv("SR_INPAINT_METHOD", "opencv")  # opencv / lama
 
+# Experimental VACE integration. VACE runs in a separate checkout/venv; this
+# service only prepares inputs and invokes the external CLI.
+VACE_PYTHON = os.getenv("SR_VACE_PYTHON", "python")
+VACE_SCRIPT = os.getenv("SR_VACE_SCRIPT", "")
+VACE_CKPT_DIR = os.getenv("SR_VACE_CKPT_DIR", "")
+VACE_MODEL_NAME = os.getenv("SR_VACE_MODEL_NAME", "vace-1.3B")
+VACE_SIZE = os.getenv("SR_VACE_SIZE", "480p")
+VACE_FRAME_NUM = int(os.getenv("SR_VACE_FRAME_NUM", "81"))
+VACE_PROMPT = os.getenv(
+    "SR_VACE_PROMPT",
+    "Remove the subtitles and reconstruct the background naturally.",
+)
+VACE_SAMPLE_STEPS = int(os.getenv("SR_VACE_SAMPLE_STEPS", "30"))
+VACE_OFFLOAD_MODEL = os.getenv("SR_VACE_OFFLOAD_MODEL", "true")
+VACE_T5_CPU = os.getenv("SR_VACE_T5_CPU", "true")
+VACE_MAX_DURATION_SEC = float(os.getenv("SR_VACE_MAX_DURATION_SEC", "6"))
+VACE_TIMEOUT_SEC = int(os.getenv("SR_VACE_TIMEOUT_SEC", "3600"))
+
 # VSR
 VSR_MODEL = os.getenv("SR_VSR_MODEL", "basicvsr++")
 VSR_UPSCALE_FACTOR = int(os.getenv("SR_VSR_UPSCALE", "2"))  # upscale inpainted region only

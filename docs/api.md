@@ -41,7 +41,7 @@
   "version": "0.2.0-phaseC",
   "detection": ["auto", "ocr", "roi"],
   "ocr_engine": ["easyocr", "paddle"],
-  "inpaint": ["lama", "opencv"],
+  "inpaint": ["lama", "opencv", "vace", "vace-1.3b"],
   "vsr": ["basicvsr", "basicvsr++", "basicvsrpp", "none", "off",
           "real-esrgan", "realesrgan"],
   "max_resolution": [2560, 1440],
@@ -69,7 +69,7 @@
 | `file` | file | ✅ | — | 视频文件 |
 | `detection` | string | ❌ | `auto` | 字幕区域检测方式：`auto` / `roi` / `ocr` |
 | `ocr_engine` | string | ❌ | `easyocr` | OCR 引擎：`easyocr` / `paddle`，仅 `detection=ocr/auto` 时生效 |
-| `inpaint` | string | ❌ | `opencv` | 去字幕方法：`opencv`（快）/ `lama`（高画质）|
+| `inpaint` | string | ❌ | `opencv` | 去字幕方法：`opencv`（快）/ `lama`（高画质）/ `vace-1.3b`（实验短片段）|
 | `vsr` | string | ❌ | `off` | 画质增强：`off` / `real-esrgan` / `basicvsr++` |
 | `roi` | string | ❌ | `bottom_20%` | 字幕区域提示，详见下文 |
 
@@ -90,6 +90,30 @@
 | **推荐最佳** ⭐ | `ocr` | `lama` | `real-esrgan` | **~3-4 GB** | **~12-18 min** |
 | 中文密集字幕 | `ocr` + `ocr_engine=paddle` | `lama` | `real-esrgan` | ~4 GB | ~13-19 min |
 | 固定位置 + 高画质 | `roi` | `lama` | `real-esrgan` | ~3-4 GB | ~12-18 min |
+| VACE 生成式精修（实验）| `roi` / `ocr` | `vace-1.3b` | `off` | 取决于外部 VACE | 仅建议 6 秒以内短片段 |
+
+### VACE 实验模式
+
+`inpaint=vace-1.3b` 会把当前检测到的字幕区域转换成 VACE mask 视频，并调用外部 VACE checkout 的 `vace_wan_inference.py`。服务本身不安装 VACE 依赖、不下载模型，也不把 VACE 放进当前 Python 3.12 环境。
+
+首版限制：
+
+- 默认只允许 6 秒以内短片段，可用 `SR_VACE_MAX_DURATION_SEC` 调整。
+- 必须设置 `vsr=off`；否则任务会失败并提示 `VACE POC does not support VSR`。
+- 必须提前配置 `SR_VACE_SCRIPT` 和 `SR_VACE_CKPT_DIR`，否则任务会失败并提示缺少 VACE 配置。
+
+推荐外部环境：
+
+```bash
+export SR_VACE_PYTHON=/opt/vace-venv/bin/python
+export SR_VACE_SCRIPT=/opt/VACE/vace/vace_wan_inference.py
+export SR_VACE_CKPT_DIR=/data/models/Wan2.1-VACE-1.3B
+export SR_VACE_SIZE=480p
+export SR_VACE_FRAME_NUM=81
+export SR_VACE_OFFLOAD_MODEL=true
+export SR_VACE_T5_CPU=true
+export SR_VACE_MAX_DURATION_SEC=6
+```
 
 ### 错误码
 
@@ -285,6 +309,7 @@ remove_subtitle(sys.argv[1],
 | 任务持久化 | 内存 only — 服务重启丢失任务记录，但 `uploads/` 与 `output/` 文件保留 |
 | GPU 显存上限 | 进程级 90% × 16GB = ~14 GB（`SR_GPU_FRACTION`）|
 | `vsr=basicvsr++` | **运行不可用**：mmediting 与 basicsr 的 SPyNet 通道宽度不一致；使用 `real-esrgan` 替代 |
+| `inpaint=vace-1.3b` | 实验模式，仅短片段；依赖外部 VACE worker，且必须 `vsr=off` |
 
 ---
 
@@ -325,6 +350,10 @@ sudo systemctl restart subtitle-remover
 | `SR_MAX_DURATION` | `60` | 最大输入时长（分钟）|
 | `SR_BATCH_SIZE` | `4` | VSR 批大小 / 滑窗 |
 | `SR_VSR_TILE_SIZE` | `0` | VSR 空间分块（0 = 全帧）|
+| `SR_VACE_PYTHON` | `python` | 外部 VACE Python |
+| `SR_VACE_SCRIPT` | 空 | 外部 `vace_wan_inference.py` 路径 |
+| `SR_VACE_CKPT_DIR` | 空 | 外部 VACE 1.3B 模型目录 |
+| `SR_VACE_MAX_DURATION_SEC` | `6` | VACE POC 最大输入秒数 |
 
 模型权重缓存：
 

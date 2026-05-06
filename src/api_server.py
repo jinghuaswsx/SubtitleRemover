@@ -144,7 +144,7 @@ def health() -> dict:
 
 _ALLOWED_DETECTION = {"auto", "roi", "ocr"}
 _ALLOWED_OCR = {"easyocr", "paddle"}
-_ALLOWED_INPAINT = {"opencv", "lama"}
+_ALLOWED_INPAINT = {"opencv", "lama", "vace", "vace-1.3b"}
 _ALLOWED_VSR = {"off", "none", "real-esrgan", "realesrgan",
                 "basicvsr++", "basicvsrpp", "basicvsr"}
 _ALLOWED_MASK_MODE = {"none", "roi", "mask_file"}

@@ -31,6 +31,7 @@ import numpy as np
 from . import config
 from .detection.roi_detector import build_mask, parse_roi
 from .inpainting.opencv_inpaint import inpaint_frame as opencv_inpaint
+from .inpainting.vace_adapter import VaceSubtitleRemover, is_vace_method
 
 logger = logging.getLogger("pipeline")
 
@@ -129,6 +130,10 @@ def _make_vsr(model: str, device: str, info: VideoInfo):
     raise ValueError(f"unknown VSR model: {model}")
 
 
+def _vsr_disabled(model: str) -> bool:
+    return model in ("off", "none", "")
+
+
 def process_video(
     input_path: str,
     output_path: str,
@@ -154,12 +159,21 @@ def process_video(
 
     device = config.DEVICE
     roi = _resolve_roi(input_path, info, detection, roi_spec, device, ocr_engine)
-    mask = build_mask(info.width, info.height, roi)
     logger.info("detection=%s(engine=%s) → roi=%s, inpaint=%s, vsr=%s",
                 detection, ocr_engine, roi, inpaint, vsr)
 
-    inpaint_fn = _make_inpaint_fn(inpaint, device)
-    vsr_kind, vsr_engine = _make_vsr(vsr, device, info)
+    vace_mode = is_vace_method(inpaint)
+    if vace_mode and not _vsr_disabled(vsr):
+        raise ValueError("VACE POC does not support VSR; use vsr=off")
+
+    if not vace_mode:
+        mask = build_mask(info.width, info.height, roi)
+        inpaint_fn = _make_inpaint_fn(inpaint, device)
+        vsr_kind, vsr_engine = _make_vsr(vsr, device, info)
+    else:
+        mask = None
+        inpaint_fn = None
+        vsr_kind, vsr_engine = "off", None
 
     workdir = tempfile.mkdtemp(prefix="sr_")
     try:
@@ -169,59 +183,62 @@ def process_video(
                 ["ffmpeg", "-y", "-loglevel", "error", "-i", input_path,
                  "-vn", "-acodec", "copy", audio_path], check=True)
 
-        decode = subprocess.Popen(
-            ["ffmpeg", "-loglevel", "error", "-i", input_path,
-             "-f", "rawvideo", "-pix_fmt", "bgr24", "-"],
-            stdout=subprocess.PIPE, bufsize=10**8)
-
-        # When BasicVSR++ runs on whole frames at x4, output dims grow.
-        out_w, out_h = info.width, info.height
-        upscale = 1
-        if vsr_kind == "frame":
-            upscale = vsr_engine.upscale_factor
-            out_w *= upscale
-            out_h *= upscale
-            logger.info("BasicVSR++ frame mode: output upscaled to %dx%d",
-                        out_w, out_h)
-
         video_only = os.path.join(workdir, "video.mp4")
-        encode = subprocess.Popen(
-            ["ffmpeg", "-y", "-loglevel", "error",
-             "-f", "rawvideo", "-pix_fmt", "bgr24",
-             "-s", f"{out_w}x{out_h}", "-r", str(info.fps or 25), "-i", "-",
-             "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "fast",
-             video_only],
-            stdin=subprocess.PIPE, bufsize=10**8)
+        if vace_mode:
+            VaceSubtitleRemover().remove(input_path, video_only, roi, info, progress_cb)
+        else:
+            decode = subprocess.Popen(
+                ["ffmpeg", "-loglevel", "error", "-i", input_path,
+                 "-f", "rawvideo", "-pix_fmt", "bgr24", "-"],
+                stdout=subprocess.PIPE, bufsize=10**8)
 
-        frame_bytes = info.width * info.height * 3
-        idx = 0
-        # for BasicVSR++ we must batch frames; for region/off we go frame-by-frame.
-        try:
+            # When BasicVSR++ runs on whole frames at x4, output dims grow.
+            out_w, out_h = info.width, info.height
+            upscale = 1
             if vsr_kind == "frame":
-                _process_frame_vsr(decode, encode, info, frame_bytes, mask,
-                                   inpaint_fn, vsr_engine, progress_cb)
-            else:
-                while True:
-                    buf = decode.stdout.read(frame_bytes)
-                    if len(buf) < frame_bytes:
-                        break
-                    frame = np.frombuffer(buf, dtype=np.uint8).reshape(
-                        info.height, info.width, 3).copy()
-                    cleaned = inpaint_fn(frame, mask)
-                    if vsr_kind == "region":
-                        cleaned = vsr_engine.enhance_region(cleaned, roi)
-                    encode.stdin.write(cleaned.tobytes())
-                    idx += 1
-                    if progress_cb and info.n_frames and idx % 30 == 0:
-                        progress_cb(min(idx / info.n_frames, 0.99))
-        finally:
-            if encode.stdin:
-                encode.stdin.close()
-            decode.wait()
-            encode.wait()
+                upscale = vsr_engine.upscale_factor
+                out_w *= upscale
+                out_h *= upscale
+                logger.info("BasicVSR++ frame mode: output upscaled to %dx%d",
+                            out_w, out_h)
 
-        if encode.returncode != 0:
-            raise RuntimeError(f"encode failed (rc={encode.returncode})")
+            encode = subprocess.Popen(
+                ["ffmpeg", "-y", "-loglevel", "error",
+                 "-f", "rawvideo", "-pix_fmt", "bgr24",
+                 "-s", f"{out_w}x{out_h}", "-r", str(info.fps or 25), "-i", "-",
+                 "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "fast",
+                 video_only],
+                stdin=subprocess.PIPE, bufsize=10**8)
+
+            frame_bytes = info.width * info.height * 3
+            idx = 0
+            # for BasicVSR++ we must batch frames; for region/off we go frame-by-frame.
+            try:
+                if vsr_kind == "frame":
+                    _process_frame_vsr(decode, encode, info, frame_bytes, mask,
+                                       inpaint_fn, vsr_engine, progress_cb)
+                else:
+                    while True:
+                        buf = decode.stdout.read(frame_bytes)
+                        if len(buf) < frame_bytes:
+                            break
+                        frame = np.frombuffer(buf, dtype=np.uint8).reshape(
+                            info.height, info.width, 3).copy()
+                        cleaned = inpaint_fn(frame, mask)
+                        if vsr_kind == "region":
+                            cleaned = vsr_engine.enhance_region(cleaned, roi)
+                        encode.stdin.write(cleaned.tobytes())
+                        idx += 1
+                        if progress_cb and info.n_frames and idx % 30 == 0:
+                            progress_cb(min(idx / info.n_frames, 0.99))
+            finally:
+                if encode.stdin:
+                    encode.stdin.close()
+                decode.wait()
+                encode.wait()
+
+            if encode.returncode != 0:
+                raise RuntimeError(f"encode failed (rc={encode.returncode})")
 
         if info.has_audio:
             subprocess.run(
