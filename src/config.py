@@ -26,7 +26,7 @@ VACE_PYTHON = os.getenv("SR_VACE_PYTHON", "python")
 VACE_SCRIPT = os.getenv("SR_VACE_SCRIPT", "")
 VACE_CKPT_DIR = os.getenv("SR_VACE_CKPT_DIR", "")
 VACE_MODEL_NAME = os.getenv("SR_VACE_MODEL_NAME", "vace-1.3B")
-VACE_SIZE = os.getenv("SR_VACE_SIZE", "480p")
+VACE_SIZE = os.getenv("SR_VACE_SIZE", "832*480")  # Wan2.1 SIZE_CONFIGS key
 VACE_FRAME_NUM = int(os.getenv("SR_VACE_FRAME_NUM", "81"))
 VACE_PROMPT = os.getenv(
     "SR_VACE_PROMPT",

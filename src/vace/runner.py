@@ -112,10 +112,16 @@ def _resolve_mask(task, info, workdir: str) -> str:
 
 
 def _build_cmd(task, profile: VACEProfile, mask_path: str, save_path: str) -> list:
+    """Build a Wan2.1 generate.py command line.
+
+    generate.py uses --task (not --model_name) and Wan2.1 SIZE_CONFIGS keys
+    like '832*480' (not '480p'). It has no --negative_prompt argument; that
+    field on Task is accepted for forward compat but is currently dropped.
+    """
     cmd = [
         config.VACE_PYTHON,
         config.VACE_SCRIPT,
-        "--model_name", profile.model_name,
+        "--task", profile.model_name,
         "--ckpt_dir", config.VACE_CKPT_DIR,
         "--src_video", task.input_path,
         "--src_mask", mask_path,
@@ -129,8 +135,6 @@ def _build_cmd(task, profile: VACEProfile, mask_path: str, save_path: str) -> li
         cmd.extend(["--offload_model", "True"])
     if profile.t5_cpu:
         cmd.append("--t5_cpu")
-    if task.negative_prompt:
-        cmd.extend(["--negative_prompt", task.negative_prompt])
     if task.seed is not None and task.seed >= 0:
         cmd.extend(["--base_seed", str(task.seed)])
     return cmd

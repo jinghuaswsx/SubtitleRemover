@@ -121,20 +121,29 @@ LocalServer 上 AudioSeparator 也已上线：
 ### 1. 准备外部 VACE 环境
 
 ```bash
-# 独立 Python 3.10 venv（VACE 上游对 3.12 支持不稳定）
-sudo mkdir -p /opt/vace
-sudo chown cjh:cjh /opt/vace
-python3.10 -m venv /opt/vace/venv
-source /opt/vace/venv/bin/activate
+# 独立 venv（本机 python3.12 实测可用；如需 3.10 改 deadsnakes PPA）
+sudo mkdir -p /opt/vace /data/models
+sudo chown -R cjh:cjh /opt/vace /data/models
+python3 -m venv /opt/vace/venv
 
-# clone Wan2.1 + VACE 推理脚本（具体仓库以官方为准）
-git clone https://github.com/Wan-Video/Wan2.1.git /opt/vace/Wan2.1
-pip install -r /opt/vace/Wan2.1/requirements.txt
+# clone Wan2.1（CLI 入口实际是 generate.py）
+git clone --depth 1 https://github.com/Wan-Video/Wan2.1.git /opt/vace/Wan2.1
 
-# 拉模型权重到 ckpt 目录（约 10 GB）
+# 装 torch（pytorch.org 在本机 SSL 不通，走阿里云镜像）
+/opt/vace/venv/bin/pip install \
+  -i https://pypi.tuna.tsinghua.edu.cn/simple \
+  --extra-index-url https://mirrors.aliyun.com/pytorch-wheels/cu124/ \
+  "torch>=2.4.0" "torchvision>=0.19.0"
+
+# 装其他依赖（flash_attn 可选；首版跳过——4070 Ti Super 不必须）
+/opt/vace/venv/bin/pip install -i https://pypi.tuna.tsinghua.edu.cn/simple \
+  $(grep -v 'flash_attn' /opt/vace/Wan2.1/requirements.txt)
+
+# 拉模型权重到 ckpt 目录（约 10 GB；hf-mirror 备选）
 mkdir -p /data/models/Wan2.1-VACE-1.3B
-huggingface-cli download Wan-AI/Wan2.1-VACE-1.3B \
-  --local-dir /data/models/Wan2.1-VACE-1.3B
+/opt/vace/venv/bin/python -c "from huggingface_hub import snapshot_download; \
+  snapshot_download('Wan-AI/Wan2.1-VACE-1.3B', \
+  local_dir='/data/models/Wan2.1-VACE-1.3B', max_workers=8)"
 ```
 
 ### 2. 编辑 systemd 单元
@@ -146,7 +155,7 @@ huggingface-cli download Wan-AI/Wan2.1-VACE-1.3B \
 Environment=SR_VACE_ENABLED=1
 Environment=SR_VACE_DRY_RUN=0
 Environment=SR_VACE_PYTHON=/opt/vace/venv/bin/python
-Environment=SR_VACE_SCRIPT=/opt/vace/Wan2.1/vace/vace_wan_inference.py
+Environment=SR_VACE_SCRIPT=/opt/vace/Wan2.1/generate.py
 Environment=SR_VACE_CKPT_DIR=/data/models/Wan2.1-VACE-1.3B
 Environment=SR_VACE_PROFILE=rtx4070tis_balanced
 Environment=SR_VACE_TIMEOUT_SEC=3600

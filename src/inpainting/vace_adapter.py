@@ -85,10 +85,12 @@ class VaceConfig:
             raise RuntimeError(f"SR_VACE_CKPT_DIR does not exist: {self.checkpoint_dir}")
 
     def build_command(self, *, src_video: str, src_mask: str, save_file: str) -> list[str]:
+        # Wan2.1 generate.py uses --task (not --model_name) and SIZE_CONFIGS
+        # keys like '832*480' (not '480p'). See docs/vace_integration_plan.md §7.2.
         cmd = [
             self.python_bin,
             self.script_path,
-            "--model_name",
+            "--task",
             self.model_name,
             "--ckpt_dir",
             self.checkpoint_dir,

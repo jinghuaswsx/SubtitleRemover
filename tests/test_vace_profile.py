@@ -13,17 +13,19 @@ class VACEProfileTest(unittest.TestCase):
         from src.vace.config import get_profile
         p = get_profile("rtx4070tis_balanced")
         self.assertEqual(p.model_name, "vace-1.3B")
-        self.assertEqual(p.size, "480p")
+        # Wan2.1 SUPPORTED_SIZES['vace-1.3B'] = ('480*832', '832*480')
+        self.assertEqual(p.size, "832*480")
         self.assertEqual(p.frame_num, 81)
         self.assertFalse(p.offload_model)
         self.assertFalse(p.t5_cpu)
 
-    def test_4070tis_quality_720p(self):
+    def test_4070tis_quality_keeps_1_3b(self):
         from src.vace.config import get_profile
         p = get_profile("rtx4070tis_quality")
-        self.assertEqual(p.size, "720p")
-        self.assertEqual(p.max_long_edge, 1280)
-        self.assertEqual(p.max_short_edge, 720)
+        # vace-1.3B doesn't support 720p; quality differs by sample_steps only.
+        self.assertEqual(p.model_name, "vace-1.3B")
+        self.assertEqual(p.size, "832*480")
+        self.assertEqual(p.sample_steps, 30)
 
     def test_4070tis_fallback_chain(self):
         from src.vace.config import fallback_profile, get_profile

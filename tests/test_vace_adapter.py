@@ -38,7 +38,8 @@ class VaceAdapterTests(unittest.TestCase):
         )
 
         self.assertEqual(cmd[0], "/venv/bin/python")
-        self.assertIn("--model_name", cmd)
+        self.assertIn("--task", cmd)
+        self.assertNotIn("--model_name", cmd)
         self.assertIn("vace-1.3B", cmd)
         self.assertIn("--offload_model", cmd)
         self.assertIn("True", cmd)

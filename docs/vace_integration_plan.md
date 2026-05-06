@@ -97,18 +97,24 @@ VSR 严格串行）。
 
 ## 5. Profile 表
 
-写在 `src/vace/config.py`：
+写在 `src/vace/config.py`。`size` 字段直接使用 Wan2.1 上游 `SIZE_CONFIGS` 的键：
 
-| Profile | model | size | frame_num | sample_steps | offload_model | t5_cpu | chunk_seconds | max_long_edge | max_short_edge | 适用场景 |
-|---|---|---|---|---|---|---|---|---|---|---|
-| `rtx4070tis_fast` | vace-1.3B | 480p | 41 | 20 | False | False | 2.7 | 832 | 480 | 单跑、要快 |
-| `rtx4070tis_balanced` *(默认)* | vace-1.3B | 480p | 81 | 25 | False | False | 4.8 | 832 | 480 | 与 audio :83 共卡也稳 |
-| `rtx4070tis_quality` | vace-1.3B | 720p | 81 | 30 | False | False | 4.8 | 1280 | 720 | 仅 GPU 独占（暂停 audio） |
+| Profile | model | size | frame_num | sample_steps | offload_model | t5_cpu | chunk_seconds | 适用场景 |
+|---|---|---|---|---|---|---|---|---|
+| `rtx4070tis_fast` | vace-1.3B | `832*480` | 41 | 20 | False | False | 2.7 | 单跑、要快 |
+| `rtx4070tis_balanced` *(默认)* | vace-1.3B | `832*480` | 81 | 25 | False | False | 4.8 | 与 audio :83 共卡也稳 |
+| `rtx4070tis_quality` | vace-1.3B | `832*480` | 81 | 30 | False | False | 4.8 | 仅靠更高 sample_steps 提质 |
 
-**OOM fallback chain**（由 `fallback_profile()` 实现）：
+**重要约束**（来自 Wan2.1 `SUPPORTED_SIZES`）：
+- `vace-1.3B` 仅支持 `480*832` / `832*480`（无 720p / 1080p 档位）
+- `vace-14B` 才支持 `720*1280` / `1280*720`，但需 24+ GB 显存，本卡禁用
+- 因此 `quality` 仍用 1.3B + 832*480，仅以更高 `sample_steps=30` 换更稳画质，
+  并不真正切换到 720p 模型
+
+**OOM fallback chain**（`fallback_profile()`）：
 `rtx4070tis_quality` → `rtx4070tis_balanced` → `rtx4070tis_fast` → `None`
 
-**关键约束**：`frame_num` 必须满足 `4n+1`，上限 81。
+**`frame_num` 约束**：必须满足 `4n+1`，上限 81。
 
 ## 6. 显存预算与跨进程协调
 

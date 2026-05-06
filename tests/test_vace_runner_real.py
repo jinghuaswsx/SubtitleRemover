@@ -136,11 +136,16 @@ class VACERunnerRealTest(unittest.TestCase):
                                                 profile="rtx4070tis_quality"))
 
         cmd = captured["cmd"]
-        self.assertIn("--model_name", cmd)
-        self.assertEqual(cmd[cmd.index("--model_name") + 1], "vace-1.3B")
-        self.assertEqual(cmd[cmd.index("--size") + 1], "720p")
+        # generate.py uses --task, not --model_name
+        self.assertNotIn("--model_name", cmd)
+        self.assertIn("--task", cmd)
+        self.assertEqual(cmd[cmd.index("--task") + 1], "vace-1.3B")
+        # vace-1.3B SUPPORTED_SIZES is only 480*832 / 832*480
+        self.assertEqual(cmd[cmd.index("--size") + 1], "832*480")
         self.assertEqual(cmd[cmd.index("--frame_num") + 1], "81")
         self.assertEqual(cmd[cmd.index("--sample_steps") + 1], "30")
+        # generate.py has no --negative_prompt argument
+        self.assertNotIn("--negative_prompt", cmd)
         # 4070 Ti Super profile keeps offload off + t5 on GPU
         self.assertNotIn("--offload_model", cmd)
         self.assertNotIn("--t5_cpu", cmd)
