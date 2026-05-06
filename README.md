@@ -34,6 +34,10 @@ GPU 加速视频去字幕工具。集成 VSR（Video Super Resolution）模块�
   → 音视频合并输出
 ```
 
+此外，独立的 VACE 编辑路由（`POST /vace-edit`，Wan2.1-VACE-1.3B）与上述去字幕流水线
+**共享同一个进程内 QUEUE**，串行排队执行。规范见
+[docs/vace_integration_plan.md](docs/vace_integration_plan.md)。
+
 ## 目录结构
 
 ```
@@ -114,11 +118,14 @@ frames = vsr.enhance(input_frames)
 | `GET` | `/health` | 存活探针 |
 | `GET` | `/info` | 模式与限制信息 |
 | `POST` | `/remove-subtitle` | 上传视频，去字幕 + VSR |
-| `GET` | `/status/{task_id}` | 任务状态查询 |
-| `GET` | `/download/{task_id}` | 下载结果 |
+| `POST` | `/vace-edit` | VACE 视频编辑（独立路由，与 `/remove-subtitle` 串行）|
+| `GET` | `/status/{task_id}` | 任务状态查询（subtitle / vace 通用）|
+| `GET` | `/download/{task_id}` | 下载结果（subtitle / vace 通用）|
 
-任务异步执行，`POST /remove-subtitle` 返回 `task_id` 后轮询 `/status/{task_id}`。
-完整参数矩阵见 [docs/api.md](docs/api.md)。
+任务异步执行，`POST /remove-subtitle` 与 `POST /vace-edit` 返回 `task_id` 后轮询
+`/status/{task_id}`。两条路由**共享单一 QUEUE 与 worker**，同一时间只跑一个任务。
+完整参数矩阵见 [docs/api.md](docs/api.md)；VACE 接入实施规范见
+[docs/vace_integration_plan.md](docs/vace_integration_plan.md)。
 
 ## 依赖
 

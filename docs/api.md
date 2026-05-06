@@ -13,11 +13,14 @@
 | GET | `/health` | 存活探针 |
 | GET | `/info` | 列出所有可选模式与推荐组合 |
 | POST | `/remove-subtitle` | 上传视频，返回 `task_id` |
-| GET | `/status/{task_id}` | 查询任务进度 |
-| GET | `/download/{task_id}` | 下载结果 mp4 |
+| POST | `/vace-edit` | VACE 视频编辑（独立路由，与 `/remove-subtitle` 共享 QUEUE） |
+| GET | `/status/{task_id}` | 查询任务进度（subtitle / vace 任务通用） |
+| GET | `/download/{task_id}` | 下载结果 mp4（subtitle / vace 任务通用） |
 
 任务**异步**执行：POST 后立即返回 `task_id`，需轮询 `/status` 直到 `state=done` 再 `/download`。
 单进程单 worker，串行处理，**同时只跑一个任务**，多余请求排队。
+`/remove-subtitle` 与 `/vace-edit` 共享同一个 QUEUE 与 worker，因此两类任务**严格串行**，
+互相之间也按入队顺序排队。
 
 ---
 
@@ -100,6 +103,47 @@
 ```json
 { "task_id": "8c38aaf3c39d4e21b53932f274ce7430", "state": "queued" }
 ```
+
+---
+
+## POST `/vace-edit`
+
+VACE 视频编辑（Wan2.1-VACE-1.3B）独立路由。详细实施规范见
+[docs/vace_integration_plan.md](vace_integration_plan.md)。
+
+**默认禁用**：`SR_VACE_ENABLED=False`（默认）时整路由返回 `503`。生产端口 `84`
+当前阶段 1 状态下，本路由处于**未启用**状态；阶段 2 部署后才开启。
+
+### 表单字段
+
+| 字段 | 类型 | 必填 | 默认 | 说明 |
+|---|---|:---:|---|---|
+| `file` | file | ✅ | — | 源视频（沿用 `supported_inputs`）|
+| `prompt` | string | ✅ | — | VACE 文本编辑指令 |
+| `negative_prompt` | string | ❌ | `""` | 负面提示 |
+| `mask_mode` | string | ❌ | `none` | `none` / `roi` / `mask_file` |
+| `roi` | string | ❌ | — | `mask_mode=roi` 时必填，格式同 `/remove-subtitle` |
+| `mask_file` | file | ❌ | — | `mask_mode=mask_file` 时必填，二值 mask 视频 |
+| `profile` | string | ❌ | `rtx4070tis_balanced` | `rtx4070tis_fast` / `rtx4070tis_balanced` / `rtx4070tis_quality` |
+| `seed` | int | ❌ | `-1` | 随机种子，`-1` = 随机 |
+
+### 错误码
+
+| HTTP | 触发条件 |
+|---|---|
+| 400 | 未知 `mask_mode` / 未知 `profile` |
+| 415 | 不支持的输入格式 |
+| 422 | `prompt` 缺失；`mask_mode=roi` 缺 `roi`；`mask_mode=mask_file` 缺 `mask_file` |
+| 503 | 本服务未启用 VACE（`SR_VACE_ENABLED=False`）|
+
+### 响应
+
+```json
+{ "task_id": "8c38aaf3c39d4e21b53932f274ce7430", "state": "queued" }
+```
+
+后续轮询 `/status/{task_id}` 与下载 `/download/{task_id}` 与 `/remove-subtitle`
+完全一致。
 
 ---
 
