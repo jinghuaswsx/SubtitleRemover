@@ -64,7 +64,8 @@ class VACERunnerRealTest(unittest.TestCase):
         os.makedirs(self._ckpt, exist_ok=True)
         for p in (self._inp, self._mask, self._script):
             open(p, "wb").close()
-        # baseline env: dry-run off, real path on
+        # baseline env: dry-run off, real path on, LOW_MEM off so the profile
+        # decides offload_model / t5_cpu (the test verifies profile fields).
         self._cfg, self._r = _reload_with_env(
             SR_VACE_DRY_RUN="0",
             SR_VACE_ENABLED="1",
@@ -73,6 +74,7 @@ class VACERunnerRealTest(unittest.TestCase):
             SR_VACE_PYTHON="/usr/bin/true",
             SR_VACE_TIMEOUT_SEC="60",
             SR_GPU_LOCK_ENABLED="0",
+            SR_VACE_LOW_MEM="0",
         )
 
     def tearDown(self):
@@ -80,7 +82,8 @@ class VACERunnerRealTest(unittest.TestCase):
         # restore default env so other test modules don't see real-mode VACE
         for k in ("SR_VACE_DRY_RUN", "SR_VACE_ENABLED", "SR_VACE_SCRIPT",
                   "SR_VACE_CKPT_DIR", "SR_VACE_PYTHON",
-                  "SR_VACE_TIMEOUT_SEC", "SR_GPU_LOCK_ENABLED"):
+                  "SR_VACE_TIMEOUT_SEC", "SR_GPU_LOCK_ENABLED",
+                  "SR_VACE_LOW_MEM"):
             os.environ.pop(k, None)
 
     def _task(self, **over):
@@ -105,8 +108,9 @@ class VACERunnerRealTest(unittest.TestCase):
     def test_invokes_subprocess_with_profile_args(self):
         captured = {}
 
-        def fake_run(cmd, check, timeout):
+        def fake_run(cmd, check, timeout, env=None):
             captured["cmd"] = cmd
+            captured["env"] = env
             # produce expected save_file
             for i, a in enumerate(cmd):
                 if a == "--save_file":
@@ -151,6 +155,8 @@ class VACERunnerRealTest(unittest.TestCase):
         self.assertNotIn("--t5_cpu", cmd)
         # mask path passed through
         self.assertIn(self._mask, cmd)
+        # subprocess inherits PYTORCH_CUDA_ALLOC_CONF for fragmentation hint
+        self.assertIn("PYTORCH_CUDA_ALLOC_CONF", captured["env"])
         # output copied
         self.assertTrue(os.path.exists(self._out))
 

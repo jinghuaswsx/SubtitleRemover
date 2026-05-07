@@ -131,9 +131,12 @@ def _build_cmd(task, profile: VACEProfile, mask_path: str, save_path: str) -> li
         "--sample_steps", str(profile.sample_steps),
         "--save_file", save_path,
     ]
-    if profile.offload_model:
+    # SR_VACE_LOW_MEM=1 (default) forces low-memory flags regardless of the
+    # profile's offload_model/t5_cpu — required when the GPU is shared with
+    # audio :83 (16 GB total) and we cannot pre-empt it.
+    if profile.offload_model or config.VACE_LOW_MEM:
         cmd.extend(["--offload_model", "True"])
-    if profile.t5_cpu:
+    if profile.t5_cpu or config.VACE_LOW_MEM:
         cmd.append("--t5_cpu")
     if task.seed is not None and task.seed >= 0:
         cmd.extend(["--base_seed", str(task.seed)])
@@ -164,13 +167,21 @@ def _run_real(task, profile: VACEProfile, progress_cb) -> None:
         cmd = _build_cmd(task, profile, mask_path, save_path)
         logger.info("running VACE (X path): %s", " ".join(cmd))
 
+        # PyTorch CUDA allocator hint to reduce fragmentation under tight VRAM,
+        # per the OOM message emitted by torch when memory is fragmented.
+        env = {**os.environ,
+               "PYTORCH_CUDA_ALLOC_CONF": os.environ.get(
+                   "PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")}
+
         if config.VACE_GPU_LOCK_ENABLED:
             from ..gpu_lock import cross_process_gpu_lock
             timeout = int(os.getenv("SR_GPU_LOCK_TIMEOUT", "1200"))
             with cross_process_gpu_lock(timeout=timeout):
-                subprocess.run(cmd, check=True, timeout=config.VACE_TIMEOUT_SEC)
+                subprocess.run(cmd, check=True, env=env,
+                               timeout=config.VACE_TIMEOUT_SEC)
         else:
-            subprocess.run(cmd, check=True, timeout=config.VACE_TIMEOUT_SEC)
+            subprocess.run(cmd, check=True, env=env,
+                           timeout=config.VACE_TIMEOUT_SEC)
 
         if not os.path.exists(save_path):
             raise RuntimeError(f"VACE finished but did not produce {save_path}")

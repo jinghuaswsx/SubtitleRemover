@@ -64,6 +64,10 @@ VACE_MODEL_DIR = os.getenv(
 )
 VACE_GPU_LOCK_ENABLED = _envflag("SR_GPU_LOCK_ENABLED", "0")
 VACE_GPU_LOCK_FILE = os.getenv("SR_GPU_LOCK_FILE", "/tmp/gpu.lock")
+# Low-memory mode: force --offload_model True --t5_cpu in the VACE subprocess
+# so it fits when audio :83 is also holding GPU memory. Default on for safety
+# on this 16 GB shared-GPU host; disable when the GPU is exclusive to SR.
+VACE_LOW_MEM = _envflag("SR_VACE_LOW_MEM", "1")
 
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
