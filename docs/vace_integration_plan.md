@@ -223,6 +223,20 @@ import dry-run、`systemctl restart`、`/health` 与 `/info` 验证。
 - ❌ 不在生产 venv 直接 `pip install` 未在 worktree 验证过的依赖。
 - ❌ 不复制 `rtx3060_*` profile（本仓库不部署 3060）。
 
+## 10.0 当前状态（2026-05-07，暂停）
+
+> **`/vace-edit` 已临时关闭**（`SR_VACE_ENABLED=0`，路由返 503）。
+> 代码、外部 venv、Wan2.1 18 GB 权重、systemd drop-in 全部保留；待解决
+> §10.1 的 VAE 显存协调问题后切回 `SR_VACE_ENABLED=1` + `SR_VACE_DRY_RUN=0`
+> 即可恢复，无需重装。
+
+恢复步骤（一次到位）：
+```bash
+sudo sed -i 's/SR_VACE_ENABLED=0/SR_VACE_ENABLED=1/; s/SR_VACE_DRY_RUN=1/SR_VACE_DRY_RUN=0/' \
+  /etc/systemd/system/subtitle-remover.service.d/vace.conf
+sudo systemctl daemon-reload && sudo systemctl restart subtitle-remover
+```
+
 ## 10.1 已知问题（阶段 2 实测 2026-05-07）
 
 阶段 2 完整部署后，**路由层全部上线**（`/health.vace_enabled=true`、systemd
