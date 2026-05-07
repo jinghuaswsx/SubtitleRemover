@@ -101,7 +101,7 @@ VSR 严格串行）。
 
 | Profile | model | size | frame_num | sample_steps | offload_model | t5_cpu | chunk_seconds | 适用场景 |
 |---|---|---|---|---|---|---|---|---|
-| `rtx4070tis_fast` | vace-1.3B | `832*480` | 41 | 20 | False | False | 2.7 | 单跑、要快 |
+| `rtx4070tis_fast` | vace-1.3B | `832*480` | 17 | 20 | False | False | 1.0 | 共卡可用（VAE 峰值 <300 MiB）|
 | `rtx4070tis_balanced` *(默认)* | vace-1.3B | `832*480` | 81 | 25 | False | False | 4.8 | 与 audio :83 共卡也稳 |
 | `rtx4070tis_quality` | vace-1.3B | `832*480` | 81 | 30 | False | False | 4.8 | 仅靠更高 sample_steps 提质 |
 

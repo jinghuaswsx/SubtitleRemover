@@ -9,6 +9,12 @@ class VACEProfileTest(unittest.TestCase):
         self.assertIn("rtx4070tis_balanced", PROFILES)
         self.assertIn("rtx4070tis_quality", PROFILES)
 
+    def test_4070tis_fast_uses_small_frame_num_for_shared_gpu(self):
+        from src.vace.config import get_profile
+        p = get_profile("rtx4070tis_fast")
+        # frame_num=17 keeps VAE decode peak fitting alongside audio :83 on 16GB
+        self.assertEqual(p.frame_num, 17)
+
     def test_4070tis_balanced_uses_1_3b_480p(self):
         from src.vace.config import get_profile
         p = get_profile("rtx4070tis_balanced")

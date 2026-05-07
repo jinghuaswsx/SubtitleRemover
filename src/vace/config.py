@@ -25,15 +25,18 @@ class VACEProfile:
 
 
 PROFILES: Dict[str, VACEProfile] = {
+    # frame_num=17 keeps VAE decode peak < 300 MiB so it fits on 16 GB cards
+    # while audio :83 also holds ~2 GB. Larger frame_num at 832*480 only fits
+    # when SR has the GPU exclusively (use balanced/quality + stop audio).
     "rtx4070tis_fast": VACEProfile(
         name="rtx4070tis_fast",
         model_name="vace-1.3B",
         size="832*480",
-        frame_num=41,
+        frame_num=17,
         sample_steps=20,
         offload_model=False,
         t5_cpu=False,
-        chunk_seconds=2.7,
+        chunk_seconds=1.0,
         max_long_edge=832,
         max_short_edge=480,
     ),
