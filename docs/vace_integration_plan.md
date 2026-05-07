@@ -223,6 +223,37 @@ import dry-run、`systemctl restart`、`/health` 与 `/info` 验证。
 - ❌ 不在生产 venv 直接 `pip install` 未在 worktree 验证过的依赖。
 - ❌ 不复制 `rtx3060_*` profile（本仓库不部署 3060）。
 
+## 10.1 已知问题（阶段 2 实测 2026-05-07）
+
+阶段 2 完整部署后，**路由层全部上线**（`/health.vace_enabled=true`、systemd
+drop-in 生效、外部 venv + 模型权重就位、subprocess 能正常拉起 generate.py），
+但**VACE 1.3B 实际推理在本机 16 GB 显存下 OOM**：
+
+| 配置 | 实际 GPU 峰值 | 结果 |
+|---|---|---|
+| `frame_num=41` + audio 共卡（2 GB） + LOW_MEM 关 | ~12.1 GB / 13.5 GB 可用 | OOM |
+| `frame_num=41` + audio 共卡 + LOW_MEM 开（offload+t5_cpu） | ~11.7 GB / 13.5 GB 可用 | OOM at VAE |
+| `frame_num=17` + audio 停 + LOW_MEM 开 | ~13.5 GB / 14.5 GB 可用 | **OOM at VAE** |
+
+后者是**纯 VACE 单跑**（audio + SR 都停），只剩 autovideosrt gunicorn 持有
+570 MiB——VACE 1.3B + offload + t5_cpu + frame_num=17 仍要 13.5 GB，远超
+上游文档承诺的 6-8 GB。
+
+可能根因（待 TBD 验证）：
+- torch 2.11 + cu13 nightly 与 Wan2.1 上游测试矩阵（torch 2.4/2.7）的内存行为差异
+- VACE adapter 通道与 1.3B 主干在 fp32 加载（diffusion_pytorch_model.safetensors
+  6.7 GB → 实际激活 fp16 × 倍数）
+- Wan2.1 VAE.forward 一次性吃整段视频，未分 sub-chunk
+
+**当前 /vace-edit 请求会以 `state=failed` 完成，error=CalledProcessError exit 1。**
+不影响 `/remove-subtitle`（contracts test 仍 3/3 通过，phase 1 验收依旧有效）。
+
+后续修复路径（commit 6+，需要新一轮调试）：
+1. 降级到 torch 2.4 或 2.7（Wan2.1 测试矩阵）
+2. 切到 vace-1.3B 的 fp8 量化分支或社区 fork
+3. 在 SR 进程内集成 audio :83 协调（暂停/恢复）以独占 GPU
+4. 用更小 chunk_seconds + frame_num=17 + 手动 VAE 分段
+
 ## 11. 相关文档
 
 - 上游知识：[docs/vace_4070ti_super_plan.md](vace_4070ti_super_plan.md)

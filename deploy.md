@@ -136,8 +136,9 @@ git clone --depth 1 https://github.com/Wan-Video/Wan2.1.git /opt/vace/Wan2.1
   "torch>=2.4.0" "torchvision>=0.19.0"
 
 # 装其他依赖（flash_attn 可选；首版跳过——4070 Ti Super 不必须）
+# einops 是 Wan2.1 隐式依赖，requirements.txt 漏了，手动加
 /opt/vace/venv/bin/pip install -i https://pypi.tuna.tsinghua.edu.cn/simple \
-  $(grep -v 'flash_attn' /opt/vace/Wan2.1/requirements.txt)
+  $(grep -v 'flash_attn' /opt/vace/Wan2.1/requirements.txt) einops
 
 # 拉模型权重到 ckpt 目录（约 10 GB；hf-mirror 备选）
 mkdir -p /data/models/Wan2.1-VACE-1.3B
